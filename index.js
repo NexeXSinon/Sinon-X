@@ -1,31 +1,59 @@
-const { default: makeWASocket, DisconnectReason, useSingleFileAuthState } = require('@whiskeysockets/baileys');
+const Baileys = require('@whiskeysockets/baileys');
+const makeWASocket = Baileys.default;
+const { initAuthCreds, proto } = Baileys;
+const fs = require('fs');
 const path = require('path');
 
 // Path to store authentication state
-const { state, saveState } = useSingleFileAuthState(path.resolve(__dirname, './auth_info.json'));
+const authFilePath = path.resolve(__dirname, './auth_info.json');
+
+// Load or initialize authentication state
+function loadAuthState() {
+    if (fs.existsSync(authFilePath)) {
+        return JSON.parse(fs.readFileSync(authFilePath, 'utf-8'));
+    }
+    return {
+        creds: initAuthCreds(),
+        keys: {}
+    };
+}
+
+const authState = loadAuthState();
+
+// Save updated authentication state
+function saveAuthState() {
+    fs.writeFileSync(authFilePath, JSON.stringify(authState, null, 2));
+}
+
+// Update the keys as they are used
+function authStateCallback(type, ids) {
+    switch (type) {
+        case 'creds.update':
+            saveAuthState();
+            break;
+        case 'keys.set':
+            for (const [key, value] of Object.entries(ids)) {
+                authState.keys[key] = value;
+            }
+            saveAuthState();
+            break;
+    }
+}
 
 async function connectToWhatsApp() {
     const sock = makeWASocket({
-        auth: state, // Use the saved authentication state
-        printQRInTerminal: true // Display QR code in the terminal
+        auth: authState,
+        authStateCallback,
+        printQRInTerminal: true
     });
-
-    // Save authentication state to a file on updates
-    sock.ev.on('creds.update', saveState);
 
     // Handle connection updates
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
 
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-
-            if (shouldReconnect) {
-                console.log('Reconnecting...');
-                connectToWhatsApp();
-            } else {
-                console.log('Logged out or connection closed. Please restart.');
-            }
+            console.log('Connection closed:', lastDisconnect?.error);
+            connectToWhatsApp(); // Attempt reconnection
         } else if (connection === 'open') {
             console.log('Connected to WhatsApp');
         }
