@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "next-auth": "^4.24.10",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
